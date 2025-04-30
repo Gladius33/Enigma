@@ -1,0 +1,25 @@
+# Enigma Node Configuration File
+
+[node]
+# Mode of operation:
+#   - "public"      → fully open, share user registrations and presence info
+#   - "private"     → accepts only local clients, never shares presence or users
+#   - "relay-only"  → does not register new users but helps others resolve/sync
+mode = "public"
+
+# IP address and port to bind the signaling server to
+bind_address = "0.0.0.0"
+bind_port = 1488
+
+# Optional limit for number of users this node can temporarily cache
+max_users = 1000
+
+[sync]
+# Whether to sync with known nodes regularly
+enabled = true
+
+# Initial list of known peer nodes to bootstrap the network
+initial_nodes = [
+    "https://node1.enigma.net:1488",
+    "https://node2.enigma.org:1488"
+]
