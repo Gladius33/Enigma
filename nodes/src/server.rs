@@ -3,6 +3,11 @@ use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::sync::Mutex;
 use std::fs;
+use tokio::time::{interval, Duration};
+
+const PRESENCE_TTL_SECS: u64 = 300; // 5 minutes
+
+// ===================== Configuration structures =====================
 
 #[derive(Debug, Deserialize)]
 struct Config {
@@ -24,27 +29,31 @@ struct SyncConfig {
     initial_nodes: Vec<String>,
 }
 
+// ===================== Runtime data structures =====================
+
 #[derive(Debug, Serialize, Deserialize, Clone)]
-struct PublicIdentity {
-    username: String,
-    public_key: String,
-    signature: String,
-    timestamp: u64,
+pub struct PublicIdentity {
+    pub username: String,
+    pub public_key: String,
+    pub signature: String,
+    pub timestamp: u64,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
-struct PeerPresence {
-    ip: String,
-    port: u16,
-    timestamp: u64,
+pub struct PeerPresence {
+    pub ip: String,
+    pub port: u16,
+    pub timestamp: u64,
 }
 
-struct AppState {
-    known_users: Mutex<HashMap<String, PublicIdentity>>,
-    active_peers: Mutex<HashMap<String, PeerPresence>>,
-    known_nodes: Mutex<HashSet<String>>,
-    config: Config,
+pub struct AppState {
+    pub known_users: Mutex<HashMap<String, PublicIdentity>>,
+    pub active_peers: Mutex<HashMap<String, PeerPresence>>,
+    pub known_nodes: Mutex<HashSet<String>>,
+    pub config: Config,
 }
+
+// ===================== Handlers =====================
 
 async fn register(
     data: web::Data<AppState>,
@@ -96,8 +105,21 @@ async fn nodes(data: web::Data<AppState>) -> impl Responder {
     HttpResponse::Ok().json(list)
 }
 
-#[actix_web::main]
-async fn main() -> std::io::Result<()> {
+async fn check_user(
+    data: web::Data<AppState>,
+    web::Path(username): web::Path<String>,
+) -> impl Responder {
+    let users = data.known_users.lock().unwrap();
+    if users.contains_key(&username) {
+        HttpResponse::Ok().body("EXISTS")
+    } else {
+        HttpResponse::NotFound().body("NOT_FOUND")
+    }
+}
+
+// ===================== Main =====================
+
+pub async fn start_server() {
     let config_str = fs::read_to_string("nodes/config.toml").expect("Failed to read config.toml");
     let config: Config = toml::from_str(&config_str).expect("Invalid config format");
 
@@ -108,6 +130,19 @@ async fn main() -> std::io::Result<()> {
         config: config.clone(),
     });
 
+    // Spawn cleanup task for peer TTL
+    let state_clone = state.clone();
+    tokio::spawn(async move {
+        let mut cleaner = interval(Duration::from_secs(60));
+        loop {
+            cleaner.tick().await;
+            let mut peers = state_clone.active_peers.lock().unwrap();
+            let now = chrono::Utc::now().timestamp() as u64;
+            peers.retain(|_ip, peer| now.saturating_sub(peer.timestamp) < PRESENCE_TTL_SECS);
+        }
+    });
+
+    // Start server
     HttpServer::new(move || {
         App::new()
             .app_data(state.clone())
@@ -116,8 +151,11 @@ async fn main() -> std::io::Result<()> {
             .route("/announce", web::post().to(announce))
             .route("/sync", web::post().to(sync))
             .route("/nodes", web::get().to(nodes))
+            .route("/check_user/{username}", web::get().to(check_user))
     })
-    .bind((config.node.bind_address.as_str(), config.node.bind_port))?
+    .bind((config.node.bind_address.as_str(), config.node.bind_port))
+    .expect("Failed to bind server")
     .run()
     .await
+    .expect("Server failed");
 }
