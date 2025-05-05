@@ -89,3 +89,47 @@ mod tests {
         assert!(peers.contains_key("1.2.3.4"));
     }
 }
+
+    #[actix_rt::test]
+    async fn test_register_and_resolve() {
+        let state = test_state();
+
+        let app = test::init_service(
+            App::new()
+                .app_data(state.clone())
+                .route("/register", web::post().to(crate::server::register))
+                .route("/resolve/{username}", web::get().to(crate::server::resolve))
+        ).await;
+
+        let identity = PublicIdentity {
+            username: "john_doe".to_string(),
+            public_key: "pubkey123".to_string(),
+            signature: "sigXYZ".to_string(),
+            timestamp: chrono::Utc::now().timestamp() as u64,
+        };
+
+        // Register the identity
+        let req = test::TestRequest::post()
+            .uri("/register")
+            .set_json(&identity)
+            .to_request();
+
+        let resp = test::call_service(&app, req).await;
+        assert_eq!(resp.status(), 200);
+
+        // Resolve the identity
+        let resolve_req = test::TestRequest::get()
+            .uri("/resolve/john_doe")
+            .to_request();
+
+        let resolve_resp = test::call_service(&app, resolve_req).await;
+        assert_eq!(resolve_resp.status(), 200);
+
+        // Try resolving unknown user
+        let unknown = test::TestRequest::get()
+            .uri("/resolve/unknown_user")
+            .to_request();
+
+        let unknown_resp = test::call_service(&app, unknown).await;
+        assert_eq!(unknown_resp.status(), 404);
+    }
