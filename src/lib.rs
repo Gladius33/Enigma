@@ -20,3 +20,6 @@ pub use network::{signaling, webrtc_client, discovery};
 pub use storage::{db, persistence};
 pub use ui::UI;
 pub use bindings::android;
+
+#[cfg(test)]
+mod app_e2e;
