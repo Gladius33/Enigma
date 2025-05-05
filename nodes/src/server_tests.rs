@@ -165,3 +165,30 @@ mod tests {
         assert!(users.contains_key("sync_user"));
         assert_eq!(users.get("sync_user").unwrap().public_key, "abc123");
     }
+
+    #[actix_rt::test]
+    async fn test_nodes() {
+        let state = test_state();
+        {
+            let mut nodes = state.known_nodes.lock().unwrap();
+            nodes.insert("https://node1.test:1488".to_string());
+            nodes.insert("https://node2.test:1488".to_string());
+        }
+
+        let app = test::init_service(
+            App::new()
+                .app_data(state.clone())
+                .route("/nodes", web::get().to(crate::server::nodes))
+        ).await;
+
+        let req = test::TestRequest::get()
+            .uri("/nodes")
+            .to_request();
+
+        let resp = test::call_service(&app, req).await;
+        assert_eq!(resp.status(), 200);
+
+        let body: Vec<String> = test::read_body_json(resp).await;
+        assert!(body.contains(&"https://node1.test:1488".to_string()));
+        assert!(body.contains(&"https://node2.test:1488".to_string()));
+    }
