@@ -1,10 +1,10 @@
 use crate::server::PublicIdentity;
 use std::collections::HashMap;
 use reqwest::Client;
-use anyhow::{Result, anyhow};
+use anyhow::{Result};
 
 /// Checks if a given @user is available across a set of remote nodes.
-/// If none of the nodes report this user as existing, we consider it safe to register.
+/// Uses the lightweight `/check_user/:username` endpoint.
 pub async fn check_username_availability(
     username: &str,
     known_nodes: &[String],
@@ -13,22 +13,20 @@ pub async fn check_username_availability(
     let mut exists_somewhere = false;
 
     for node_url in known_nodes {
-        let url = format!("{}/resolve/{}", node_url.trim_end_matches('/'), username);
+        let url = format!("{}/check_user/{}", node_url.trim_end_matches('/'), username);
         match client.get(&url).send().await {
-            Ok(resp) => {
-                if resp.status().is_success() {
-                    exists_somewhere = true;
-                    break;
-                }
+            Ok(resp) if resp.status().is_success() => {
+                exists_somewhere = true;
+                break;
             }
-            Err(_) => continue, // Node unreachable → ignore
+            Err(_) | Ok(_) => continue,
         }
     }
 
     Ok(!exists_somewhere)
 }
 
-/// Propagates a new identity to known peers (broadcast).
+/// Propagates a new identity to known peers (broadcast via /sync)
 pub async fn broadcast_identity(
     identity: &PublicIdentity,
     known_nodes: &[String],
@@ -50,3 +48,4 @@ pub async fn broadcast_identity(
 
     Ok(())
 }
+
