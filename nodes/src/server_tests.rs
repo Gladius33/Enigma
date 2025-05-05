@@ -133,3 +133,35 @@ mod tests {
         let unknown_resp = test::call_service(&app, unknown).await;
         assert_eq!(unknown_resp.status(), 404);
     }
+
+    #[actix_rt::test]
+    async fn test_sync() {
+        let state = test_state();
+
+        let app = test::init_service(
+            App::new()
+                .app_data(state.clone())
+                .route("/sync", web::post().to(crate::server::sync))
+        ).await;
+
+        let mut identities = HashMap::new();
+        let user = PublicIdentity {
+            username: "sync_user".to_string(),
+            public_key: "abc123".to_string(),
+            signature: "sig".to_string(),
+            timestamp: 123456789,
+        };
+        identities.insert("sync_user".to_string(), user.clone());
+
+        let req = test::TestRequest::post()
+            .uri("/sync")
+            .set_json(&identities)
+            .to_request();
+
+        let resp = test::call_service(&app, req).await;
+        assert_eq!(resp.status(), 200);
+
+        let users = state.known_users.lock().unwrap();
+        assert!(users.contains_key("sync_user"));
+        assert_eq!(users.get("sync_user").unwrap().public_key, "abc123");
+    }
