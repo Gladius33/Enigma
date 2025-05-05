@@ -16,6 +16,13 @@ use webrtc::api::API;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 use anyhow::Result;
+use async_trait::async_trait;
+
+/// Trait abstraction for mocking WebRTC behavior in tests
+#[async_trait]
+pub trait WebRTC: Send + Sync {
+    async fn send_message(&self, data: &[u8]) -> Result<()>;
+}
 
 /// Represents a WebRTC client capable of establishing peer-to-peer connections.
 pub struct WebRTCClient {
@@ -83,12 +90,15 @@ impl WebRTCClient {
         self.peer_connection.add_ice_candidate(candidate).await?;
         Ok(())
     }
+}
 
-    /// Sends a message over the data channel.
-    pub async fn send_message(&self, message: &[u8]) -> Result<()> {
+/// Implementation of the WebRTC trait for the real client.
+#[async_trait]
+impl WebRTC for WebRTCClient {
+    async fn send_message(&self, data: &[u8]) -> Result<()> {
         self.data_channel.send(&DataChannelMessage {
             is_binary: true,
-            data: message.to_vec(),
+            data: data.to_vec(),
         }).await?;
         Ok(())
     }
